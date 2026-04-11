@@ -1,3 +1,4 @@
-function testA() {
-  return 'a';
+function testB() {
+  console.log('b');
+  return 'b';
 }
