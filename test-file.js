@@ -1,9 +1,14 @@
-function hello() {
-  console.log('Hello, world!');
+function hello(name = 'world') {
+  console.log(`Hello, ${name}!`);
+  console.log('Welcome to Bonsai!');
 }
 
-function goodbye() {
-  console.log('Goodbye, world!');
+function goodbye(name = 'world') {
+  console.log(`Goodbye, ${name}!`);
 }
 
-module.exports = { hello, goodbye };
+function greet(name) {
+  hello(name);
+}
+
+module.exports = { hello, goodbye, greet };
