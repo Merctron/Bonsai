@@ -1,3 +1,4 @@
-function old() {
-  return 'old';
+function newer() {
+  console.log('test');
+  return 'newer';
 }
