@@ -1,3 +1,4 @@
-function testOld() {
-  return 'old';
+function testNew() {
+  console.log('test');
+  return 'new';
 }
