@@ -1,3 +1,4 @@
-function short() {
-  return 1;
+function longer() {
+  console.log('test');
+  return 2;
 }
