@@ -1,3 +1,4 @@
 function test() {
-  return 'before';
+  console.log('updated');
+  return 'after';
 }
