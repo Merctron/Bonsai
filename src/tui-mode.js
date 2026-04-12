@@ -143,6 +143,7 @@ export async function launchTUI(commitRange) {
     keys: true,
     vi: true,
     mouse: true,
+    tags: true,  // Enable tag parsing for colors
     style: {
       bg: palette.background,
       fg: 'white'
@@ -184,37 +185,87 @@ export async function launchTUI(commitRange) {
     fileList.select(currentFileIndex);
   }
 
-  // Render diff for current file
+  // Render diff for current file (side-by-side)
   function renderDiff() {
     const file = files[currentFileIndex];
     const filePath = file.newPath || file.oldPath;
 
     let content = [];
+    const termWidth = screen.width;
+    const sideWidth = Math.floor((termWidth - 15) / 2); // Account for line numbers and divider
 
     for (const hunk of file.hunks) {
       if (hunk.heading) {
-        content.push(hunk.heading);
+        content.push(`{cyan-fg}${hunk.heading}{/cyan-fg}`);
       }
 
       let oldLineNum = hunk.oldStart;
       let newLineNum = hunk.newStart;
 
-      for (const line of hunk.lines) {
-        let lineStr = '';
+      // Process lines in pairs for side-by-side
+      let i = 0;
+      while (i < hunk.lines.length) {
+        const line = hunk.lines[i];
 
-        if (line.type === 'removed') {
-          lineStr = `{red-fg}${oldLineNum.toString().padStart(4)} - ${line.content}{/red-fg}`;
+        if (line.type === 'context') {
+          const leftNum = oldLineNum.toString().padStart(4);
+          const rightNum = newLineNum.toString().padStart(4);
+          const truncated = line.content.substring(0, sideWidth);
+          content.push(`${leftNum}  ${truncated.padEnd(sideWidth)} │ ${rightNum}  ${truncated}`);
           oldLineNum++;
+          newLineNum++;
+          i++;
+        } else if (line.type === 'removed') {
+          // Collect consecutive removals
+          const removed = [];
+          while (i < hunk.lines.length && hunk.lines[i].type === 'removed') {
+            removed.push(hunk.lines[i]);
+            i++;
+          }
+
+          // Collect consecutive additions
+          const added = [];
+          while (i < hunk.lines.length && hunk.lines[i].type === 'added') {
+            added.push(hunk.lines[i]);
+            i++;
+          }
+
+          // Pair them up
+          const maxLen = Math.max(removed.length, added.length);
+          for (let j = 0; j < maxLen; j++) {
+            let leftPart = '';
+            let rightPart = '';
+
+            if (j < removed.length) {
+              const leftNum = oldLineNum.toString().padStart(4);
+              const truncated = removed[j].content.substring(0, sideWidth);
+              leftPart = `{red-fg}${leftNum} -${truncated.padEnd(sideWidth)}{/red-fg}`;
+              oldLineNum++;
+            } else {
+              leftPart = ' '.repeat(sideWidth + 6);
+            }
+
+            if (j < added.length) {
+              const rightNum = newLineNum.toString().padStart(4);
+              const truncated = added[j].content.substring(0, sideWidth);
+              rightPart = `{green-fg}${rightNum} +${truncated}{/green-fg}`;
+              newLineNum++;
+            } else {
+              rightPart = '';
+            }
+
+            content.push(`${leftPart} │ ${rightPart}`);
+          }
         } else if (line.type === 'added') {
-          lineStr = `{green-fg}${newLineNum.toString().padStart(4)} + ${line.content}{/green-fg}`;
+          // Addition without corresponding removal
+          const leftPart = ' '.repeat(sideWidth + 6);
+          const rightNum = newLineNum.toString().padStart(4);
+          const truncated = line.content.substring(0, sideWidth);
+          const rightPart = `{green-fg}${rightNum} +${truncated}{/green-fg}`;
+          content.push(`${leftPart} │ ${rightPart}`);
           newLineNum++;
-        } else {
-          lineStr = `${oldLineNum.toString().padStart(4)}   ${line.content}`;
-          oldLineNum++;
-          newLineNum++;
+          i++;
         }
-
-        content.push(lineStr);
       }
 
       content.push('');
@@ -242,7 +293,7 @@ export async function launchTUI(commitRange) {
       fg: 'white'
     }
   });
-  statusBar.setContent('[r]eview [n]ext [p]rev [f]iles [/]search [q]uit');
+  statusBar.setContent('{bold}[r]{/bold}eview {bold}[n]{/bold}ext {bold}[p]{/bold}rev {bold}[f]{/bold}iles {bold}[q]{/bold}uit  {cyan-fg}j/k{/cyan-fg} scroll {cyan-fg}d/u{/cyan-fg} page {cyan-fg}g/G{/cyan-fg} top/bottom');
 
   // Key bindings
   screen.key(['q', 'C-c'], () => {
