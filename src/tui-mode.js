@@ -134,6 +134,7 @@ export async function launchTUI(commitRange) {
     height: '100%-4',
     scrollable: true,
     alwaysScroll: true,
+    wrap: false,  // Disable line wrapping
     scrollbar: {
       ch: '│',
       style: {
@@ -191,12 +192,15 @@ export async function launchTUI(commitRange) {
     const filePath = file.newPath || file.oldPath;
 
     let content = [];
-    const termWidth = screen.width;
-    const sideWidth = Math.floor((termWidth - 15) / 2); // Account for line numbers and divider
+    const termWidth = screen.width - 2; // Account for scrollbar
+    // Each side: 4 (line num) + 2 (space and +/-) + content
+    // Middle: 3 (space + │ + space)
+    const sideWidth = Math.floor((termWidth - 16) / 2); // 4+2 left, 4+2 right, 3 middle, 1 buffer
 
     for (const hunk of file.hunks) {
       if (hunk.heading) {
-        content.push(`{cyan-fg}${hunk.heading}{/cyan-fg}`);
+        const truncatedHeading = hunk.heading.substring(0, termWidth - 4);
+        content.push(`{cyan-fg}${truncatedHeading}{/cyan-fg}`);
       }
 
       let oldLineNum = hunk.oldStart;
@@ -211,7 +215,9 @@ export async function launchTUI(commitRange) {
           const leftNum = oldLineNum.toString().padStart(4);
           const rightNum = newLineNum.toString().padStart(4);
           const truncated = line.content.substring(0, sideWidth);
-          content.push(`${leftNum}  ${truncated.padEnd(sideWidth)} │ ${rightNum}  ${truncated}`);
+          const leftContent = truncated.substring(0, sideWidth).padEnd(sideWidth);
+          const rightContent = truncated.substring(0, sideWidth);
+          content.push(`${leftNum}  ${leftContent} │ ${rightNum}  ${rightContent}`);
           oldLineNum++;
           newLineNum++;
           i++;
@@ -238,8 +244,9 @@ export async function launchTUI(commitRange) {
 
             if (j < removed.length) {
               const leftNum = oldLineNum.toString().padStart(4);
-              const truncated = removed[j].content.substring(0, sideWidth);
-              leftPart = `{red-fg}${leftNum} -${truncated.padEnd(sideWidth)}{/red-fg}`;
+              const truncated = removed[j].content.substring(0, sideWidth - 1);
+              const padded = truncated.padEnd(sideWidth);
+              leftPart = `{red-fg}${leftNum} -${padded}{/red-fg}`;
               oldLineNum++;
             } else {
               leftPart = ' '.repeat(sideWidth + 6);
@@ -247,7 +254,7 @@ export async function launchTUI(commitRange) {
 
             if (j < added.length) {
               const rightNum = newLineNum.toString().padStart(4);
-              const truncated = added[j].content.substring(0, sideWidth);
+              const truncated = added[j].content.substring(0, sideWidth - 1);
               rightPart = `{green-fg}${rightNum} +${truncated}{/green-fg}`;
               newLineNum++;
             } else {
@@ -260,7 +267,7 @@ export async function launchTUI(commitRange) {
           // Addition without corresponding removal
           const leftPart = ' '.repeat(sideWidth + 6);
           const rightNum = newLineNum.toString().padStart(4);
-          const truncated = line.content.substring(0, sideWidth);
+          const truncated = line.content.substring(0, sideWidth - 1);
           const rightPart = `{green-fg}${rightNum} +${truncated}{/green-fg}`;
           content.push(`${leftPart} │ ${rightPart}`);
           newLineNum++;
