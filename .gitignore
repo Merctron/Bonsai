@@ -140,3 +140,6 @@ vite.config.ts.timestamp-*
 
 # Bonsai review state files
 .bonsai-review-*.json
+
+# Claude
+.claude
