@@ -222,10 +222,14 @@ export async function launchTUI(commitRange) {
   }
 
   // Synchronize scrolling between boxes
+  let syncing = false;
   function syncScroll(source, target) {
+    if (syncing) return;
+    syncing = true;
     const sourceScroll = source.getScrollPerc();
     target.setScrollPerc(sourceScroll);
     screen.render();
+    syncing = false;
   }
 
   // Setup scroll synchronization
