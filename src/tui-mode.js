@@ -1,9 +1,7 @@
 import blessed from 'blessed';
 import { getDiff, getDiffStats, isGitRepository } from './git.js';
 import { parseDiff } from './diff-parser.js';
-import { highlightCode } from './highlighter.js';
-import { palette, BG_CODE, RESET_CODE } from './colors.js';
-import { ansiToBlessed } from './ansi-to-blessed.js';
+import { palette } from './colors.js';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -236,7 +234,21 @@ export async function launchTUI(commitRange) {
   leftBox.on('scroll', () => syncScroll(leftBox, rightBox));
   rightBox.on('scroll', () => syncScroll(rightBox, leftBox));
 
-  // Render diff for current file (side-by-side with syntax highlighting)
+  // Simple syntax highlighting for TUI (blessed-compatible)
+  function simpleHighlight(text) {
+    // Very basic keyword highlighting for common patterns
+    return text
+      // Keywords (common across languages)
+      .replace(/\b(function|const|let|var|if|else|return|for|while|class|import|export|from|async|await|def|fn)\b/g, '{magenta-fg}$1{/magenta-fg}')
+      // Strings
+      .replace(/(['"`])(?:(?!\1).)*\1/g, (match) => `{green-fg}${match}{/green-fg}`)
+      // Numbers
+      .replace(/\b\d+\.?\d*\b/g, (match) => `{blue-fg}${match}{/blue-fg}`)
+      // Comments (simple)
+      .replace(/(\/\/.*$|#.*$)/gm, (match) => `{gray-fg}${match}{/gray-fg}`);
+  }
+
+  // Render diff for current file (side-by-side with simple highlighting)
   function renderDiff() {
     const file = files[currentFileIndex];
     const filePath = file.newPath || file.oldPath;
@@ -259,14 +271,12 @@ export async function launchTUI(commitRange) {
         const line = hunk.lines[i];
 
         if (line.type === 'context') {
-          // Apply syntax highlighting
-          const highlighted = ansiToBlessed(highlightCode(line.content, filePath));
-
           const leftNum = oldLineNum.toString().padStart(4);
           const rightNum = newLineNum.toString().padStart(4);
+          const content = simpleHighlight(line.content);
 
-          leftContent.push(`${leftNum}  ${highlighted}`);
-          rightContent.push(`${rightNum}  ${highlighted}`);
+          leftContent.push(`{white-fg}${leftNum}  ${content}{/white-fg}`);
+          rightContent.push(`{white-fg}${rightNum}  ${content}{/white-fg}`);
 
           oldLineNum++;
           newLineNum++;
@@ -291,8 +301,7 @@ export async function launchTUI(commitRange) {
           for (let j = 0; j < maxLen; j++) {
             if (j < removed.length) {
               const leftNum = oldLineNum.toString().padStart(4);
-              const highlighted = ansiToBlessed(highlightCode(removed[j].content, filePath));
-              leftContent.push(`{red-fg}${leftNum} -${highlighted}{/red-fg}`);
+              leftContent.push(`{red-fg}${leftNum} - ${removed[j].content}{/red-fg}`);
               oldLineNum++;
             } else {
               leftContent.push('');
@@ -300,8 +309,7 @@ export async function launchTUI(commitRange) {
 
             if (j < added.length) {
               const rightNum = newLineNum.toString().padStart(4);
-              const highlighted = ansiToBlessed(highlightCode(added[j].content, filePath));
-              rightContent.push(`{green-fg}${rightNum} +${highlighted}{/green-fg}`);
+              rightContent.push(`{green-fg}${rightNum} + ${added[j].content}{/green-fg}`);
               newLineNum++;
             } else {
               rightContent.push('');
@@ -312,8 +320,7 @@ export async function launchTUI(commitRange) {
           leftContent.push('');
 
           const rightNum = newLineNum.toString().padStart(4);
-          const highlighted = ansiToBlessed(highlightCode(line.content, filePath));
-          rightContent.push(`{green-fg}${rightNum} +${highlighted}{/green-fg}`);
+          rightContent.push(`{green-fg}${rightNum} + ${line.content}{/green-fg}`);
           newLineNum++;
           i++;
         }
