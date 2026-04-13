@@ -3,6 +3,7 @@ import { getDiff, getDiffStats, isGitRepository } from './git.js';
 import { parseDiff } from './diff-parser.js';
 import { highlightCode } from './highlighter.js';
 import { palette, BG_CODE, RESET_CODE } from './colors.js';
+import { ansiToBlessed } from './ansi-to-blessed.js';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -126,15 +127,15 @@ export async function launchTUI(commitRange) {
     screen.render();
   }
 
-  // Diff content area
-  const diffBox = blessed.box({
+  // Left side diff box
+  const leftBox = blessed.box({
     top: 3,
     left: 0,
-    width: '100%',
+    width: '49%',
     height: '100%-4',
     scrollable: true,
     alwaysScroll: true,
-    wrap: false,  // Disable line wrapping
+    wrap: true,
     scrollbar: {
       ch: '│',
       style: {
@@ -144,7 +145,41 @@ export async function launchTUI(commitRange) {
     keys: true,
     vi: true,
     mouse: true,
-    tags: true,  // Enable tag parsing for colors
+    tags: true,
+    style: {
+      bg: palette.background,
+      fg: 'white'
+    }
+  });
+
+  // Divider
+  const divider = blessed.line({
+    top: 3,
+    left: '49%',
+    height: '100%-4',
+    orientation: 'vertical',
+    style: {
+      fg: 'white',
+      bg: palette.background
+    }
+  });
+
+  // Right side diff box
+  const rightBox = blessed.box({
+    top: 3,
+    left: '49%+1',
+    width: '51%-1',
+    height: '100%-4',
+    scrollable: true,
+    alwaysScroll: true,
+    wrap: true,
+    scrollbar: {
+      ch: '│',
+      style: {
+        fg: 'white'
+      }
+    },
+    tags: true,
     style: {
       bg: palette.background,
       fg: 'white'
@@ -186,21 +221,29 @@ export async function launchTUI(commitRange) {
     fileList.select(currentFileIndex);
   }
 
-  // Render diff for current file (side-by-side)
+  // Synchronize scrolling between boxes
+  function syncScroll(source, target) {
+    const sourceScroll = source.getScrollPerc();
+    target.setScrollPerc(sourceScroll);
+    screen.render();
+  }
+
+  // Setup scroll synchronization
+  leftBox.on('scroll', () => syncScroll(leftBox, rightBox));
+  rightBox.on('scroll', () => syncScroll(rightBox, leftBox));
+
+  // Render diff for current file (side-by-side with syntax highlighting)
   function renderDiff() {
     const file = files[currentFileIndex];
     const filePath = file.newPath || file.oldPath;
 
-    let content = [];
-    const termWidth = screen.width - 2; // Account for scrollbar
-    // Each side: 4 (line num) + 2 (space and +/-) + content
-    // Middle: 3 (space + │ + space)
-    const sideWidth = Math.floor((termWidth - 16) / 2); // 4+2 left, 4+2 right, 3 middle, 1 buffer
+    let leftContent = [];
+    let rightContent = [];
 
     for (const hunk of file.hunks) {
       if (hunk.heading) {
-        const truncatedHeading = hunk.heading.substring(0, termWidth - 4);
-        content.push(`{cyan-fg}${truncatedHeading}{/cyan-fg}`);
+        leftContent.push(`{cyan-fg}${hunk.heading}{/cyan-fg}`);
+        rightContent.push(`{cyan-fg}${hunk.heading}{/cyan-fg}`);
       }
 
       let oldLineNum = hunk.oldStart;
@@ -212,12 +255,15 @@ export async function launchTUI(commitRange) {
         const line = hunk.lines[i];
 
         if (line.type === 'context') {
+          // Apply syntax highlighting
+          const highlighted = ansiToBlessed(highlightCode(line.content, filePath));
+
           const leftNum = oldLineNum.toString().padStart(4);
           const rightNum = newLineNum.toString().padStart(4);
-          const truncated = line.content.substring(0, sideWidth);
-          const leftContent = truncated.substring(0, sideWidth).padEnd(sideWidth);
-          const rightContent = truncated.substring(0, sideWidth);
-          content.push(`${leftNum}  ${leftContent} │ ${rightNum}  ${rightContent}`);
+
+          leftContent.push(`${leftNum}  ${highlighted}`);
+          rightContent.push(`${rightNum}  ${highlighted}`);
+
           oldLineNum++;
           newLineNum++;
           i++;
@@ -239,50 +285,47 @@ export async function launchTUI(commitRange) {
           // Pair them up
           const maxLen = Math.max(removed.length, added.length);
           for (let j = 0; j < maxLen; j++) {
-            let leftPart = '';
-            let rightPart = '';
-
             if (j < removed.length) {
               const leftNum = oldLineNum.toString().padStart(4);
-              const truncated = removed[j].content.substring(0, sideWidth - 1);
-              const padded = truncated.padEnd(sideWidth);
-              leftPart = `{red-fg}${leftNum} -${padded}{/red-fg}`;
+              const highlighted = ansiToBlessed(highlightCode(removed[j].content, filePath));
+              leftContent.push(`{red-fg}${leftNum} -${highlighted}{/red-fg}`);
               oldLineNum++;
             } else {
-              leftPart = ' '.repeat(sideWidth + 6);
+              leftContent.push('');
             }
 
             if (j < added.length) {
               const rightNum = newLineNum.toString().padStart(4);
-              const truncated = added[j].content.substring(0, sideWidth - 1);
-              rightPart = `{green-fg}${rightNum} +${truncated}{/green-fg}`;
+              const highlighted = ansiToBlessed(highlightCode(added[j].content, filePath));
+              rightContent.push(`{green-fg}${rightNum} +${highlighted}{/green-fg}`);
               newLineNum++;
             } else {
-              rightPart = '';
+              rightContent.push('');
             }
-
-            content.push(`${leftPart} │ ${rightPart}`);
           }
         } else if (line.type === 'added') {
           // Addition without corresponding removal
-          const leftPart = ' '.repeat(sideWidth + 6);
+          leftContent.push('');
+
           const rightNum = newLineNum.toString().padStart(4);
-          const truncated = line.content.substring(0, sideWidth - 1);
-          const rightPart = `{green-fg}${rightNum} +${truncated}{/green-fg}`;
-          content.push(`${leftPart} │ ${rightPart}`);
+          const highlighted = ansiToBlessed(highlightCode(line.content, filePath));
+          rightContent.push(`{green-fg}${rightNum} +${highlighted}{/green-fg}`);
           newLineNum++;
           i++;
         }
       }
 
-      content.push('');
+      leftContent.push('');
+      rightContent.push('');
     }
 
-    diffBox.setContent(content.join('\n'));
+    leftBox.setContent(leftContent.join('\n'));
+    rightBox.setContent(rightContent.join('\n'));
 
     // Restore scroll position
     const savedPosition = reviewState.files[filePath]?.lastPosition || 0;
-    diffBox.setScrollPerc(savedPosition);
+    leftBox.setScrollPerc(savedPosition);
+    rightBox.setScrollPerc(savedPosition);
 
     updateHeader();
     screen.render();
@@ -324,7 +367,7 @@ export async function launchTUI(commitRange) {
       // Save current position
       const file = files[currentFileIndex];
       const filePath = file.newPath || file.oldPath;
-      reviewState.files[filePath].lastPosition = diffBox.getScrollPerc();
+      reviewState.files[filePath].lastPosition = leftBox.getScrollPerc();
       saveReviewState(reviewState);
 
       currentFileIndex++;
@@ -339,7 +382,7 @@ export async function launchTUI(commitRange) {
       // Save current position
       const file = files[currentFileIndex];
       const filePath = file.newPath || file.oldPath;
-      reviewState.files[filePath].lastPosition = diffBox.getScrollPerc();
+      reviewState.files[filePath].lastPosition = leftBox.getScrollPerc();
       saveReviewState(reviewState);
 
       currentFileIndex--;
@@ -354,14 +397,20 @@ export async function launchTUI(commitRange) {
     fileList.hidden = !showFileList;
 
     if (showFileList) {
-      diffBox.width = '70%';
-      diffBox.left = '30%';
+      leftBox.width = '34%';
+      leftBox.left = '30%';
+      divider.left = '64%';
+      rightBox.width = '36%-1';
+      rightBox.left = '64%+1';
       updateFileList();
       fileList.focus();
     } else {
-      diffBox.width = '100%';
-      diffBox.left = 0;
-      diffBox.focus();
+      leftBox.width = '49%';
+      leftBox.left = 0;
+      divider.left = '49%';
+      rightBox.width = '51%-1';
+      rightBox.left = '49%+1';
+      leftBox.focus();
     }
 
     screen.render();
@@ -374,7 +423,7 @@ export async function launchTUI(commitRange) {
       // Save current position
       const file = files[currentFileIndex];
       const filePath = file.newPath || file.oldPath;
-      reviewState.files[filePath].lastPosition = diffBox.getScrollPerc();
+      reviewState.files[filePath].lastPosition = leftBox.getScrollPerc();
       saveReviewState(reviewState);
 
       currentFileIndex = selected;
@@ -385,21 +434,26 @@ export async function launchTUI(commitRange) {
     // Hide file list after selection
     showFileList = false;
     fileList.hidden = true;
-    diffBox.width = '100%';
-    diffBox.left = 0;
-    diffBox.focus();
+    leftBox.width = '49%';
+    leftBox.left = 0;
+    divider.left = '49%';
+    rightBox.width = '51%-1';
+    rightBox.left = '49%+1';
+    leftBox.focus();
     screen.render();
   });
 
   // Append elements
   screen.append(header);
-  screen.append(diffBox);
+  screen.append(leftBox);
+  screen.append(divider);
+  screen.append(rightBox);
   screen.append(fileList);
   screen.append(statusBar);
 
   // Initial render
   updateHeader();
   renderDiff();
-  diffBox.focus();
+  leftBox.focus();
   screen.render();
 }
