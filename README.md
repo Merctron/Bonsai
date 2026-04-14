@@ -36,8 +36,13 @@ Bonsai is a scoped tool with a singular focus: make code review readable and enj
 ## Installation
 
 ```bash
-npm install
-npm link
+cargo build --release
+# Binary will be at ./target/release/bonsai
+```
+
+To install globally:
+```bash
+cargo install --path .
 ```
 
 ## Usage
@@ -73,9 +78,10 @@ q       - Quit
 ### Static Mode
 
 ```bash
-bonsai HEAD~1 --dump              # Output to less
-bonsai HEAD~1 --dump > diff.txt   # Save to file
-bonsai HEAD~1 --dump | grep TODO  # Pipe to other tools
+bonsai HEAD~1 dump              # Output to terminal
+bonsai HEAD~1 dump | less       # Pipe to pager
+bonsai HEAD~1 dump > diff.txt   # Save to file
+bonsai HEAD~1 dump | grep TODO  # Pipe to other tools
 ```
 
 ## Review State
@@ -95,7 +101,7 @@ Custom color palette designed for readability:
 
 ## Development
 
-Built with Node.js and blessed for the TUI. See `TUI_GUIDE.md` for implementation details.
+Built with Rust using ratatui for the TUI and crossterm for terminal control. Source code is in `src/`.
 
 ## License
 
